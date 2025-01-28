@@ -27,6 +27,12 @@ pub const TokenType = enum {
     Number,
     And,
     OR,
+    Xor,
+    BitwiseAnd,
+    BitwiseOr,
+    BitwiseNot,
+    ShiftLeft,
+    ShiftRight,
     If,
     Else,
     While,
@@ -141,8 +147,8 @@ pub const Scanner = struct {
                 if (scanner.currentLen() <= 1) return TokenType.Identifier;
                 return switch (scanner.start[1]) {
                     'a' => scanner.checkKeyword(2, 3, "lse", TokenType.False),
+                    'n' => scanner.checkKeyword(2, 0, "", TokenType.Fn),
                     'o' => scanner.checkKeyword(2, 1, "r", TokenType.For),
-                    'n' => scanner.checkKeyword(2, 0, "n", TokenType.Fn),
                     else => TokenType.Identifier,
                 };
             },
@@ -219,6 +225,41 @@ pub const Scanner = struct {
             .chars = msg,
             .line = scanner.line,
             .optionalData = null,
+        };
+    }
+
+    pub fn scanToken(scanner: *Scanner) Token {
+        scanner.skipWhiteSpace();
+        scanner.start = scanner.current;
+        if (scanner.isAtEnd()) return scanner.makeToken(TokenType.EOF, null);
+        const char = scanner.advance();
+        if (std.ascii.isAlphabetic(char)) return scanner.MakeIdentifierToken();
+        if (std.ascii.isDigit(char)) return scanner.MakeNumberToken();
+
+        return switch (char) {
+            '(' => scanner.makeToken(TokenType.LParen, null),
+            ')' => scanner.makeToken(TokenType.RParen, null),
+            '{' => scanner.makeToken(TokenType.LBrace, null),
+            '}' => scanner.makeToken(TokenType.RBrace, null),
+            '[' => scanner.makeToken(TokenType.LBracket, null),
+            ']' => scanner.makeToken(TokenType.RBracket, null),
+            ';' => scanner.makeToken(TokenType.Semicolon, null),
+            ',' => scanner.makeToken(TokenType.Comma, null),
+            '.' => scanner.makeToken(TokenType.Dot, null),
+            '-' => scanner.makeToken(TokenType.Minus, null),
+            '+' => scanner.makeToken(TokenType.Plus, null),
+            '/' => scanner.makeToken(TokenType.Slash, null),
+            '*' => scanner.makeToken(TokenType.Star, null),
+            '^' => scanner.makeToken(TokenType.Xor, null),
+            '&' => scanner.makeToken(TokenType.BitwiseAnd, null),
+            '|' => scanner.makeToken(TokenType.BitwiseOr, null),
+            '~' => scanner.makeToken(TokenType.BitwiseNot, null),
+            '!' => scanner.makeToken(if (scanner.match('=')) TokenType.BangEqual else TokenType.Bang, null),
+            '=' => scanner.makeToken(if (scanner.match('=')) TokenType.EqualEqual else TokenType.Equal, null),
+            '<' => scanner.makeToken(if (scanner.match('<')) TokenType.ShiftLeft else if (scanner.match('=')) TokenType.LessEqual else TokenType.Less, null), // Added support for Shift Left operator
+            '>' => scanner.makeToken(if (scanner.match('>')) TokenType.ShiftRight else if (scanner.match('=')) TokenType.GreaterEqual else TokenType.Greater, null),
+            '"' => scanner.makeStringToken(),
+            else => scanner.makeErrorToken("Unexpected Token."),
         };
     }
 };
@@ -359,4 +400,67 @@ test "MakeNumberToken for float" {
     try std.testing.expectEqualStrings(token.chars, "123.456");
     try std.testing.expectEqual(token.optionalData.?.base, 10);
     try std.testing.expectEqual(token.optionalData.?.fraction, 1);
+}
+
+test "Scan token" {
+    const source = "let varName = 123;";
+    var scanner = Scanner.init(source);
+    const id = scanner.scanToken();
+
+    try std.testing.expectEqual(id.type, TokenType.Let);
+    try std.testing.expectEqualStrings(id.chars, "let");
+
+    const token = scanner.scanToken();
+    try std.testing.expectEqual(token.type, TokenType.Identifier);
+    try std.testing.expectEqualStrings(token.chars, "varName");
+
+    const token2 = scanner.scanToken();
+    try std.testing.expectEqual(token2.type, TokenType.Equal);
+    try std.testing.expectEqualStrings(token2.chars, "=");
+
+    const token3 = scanner.scanToken();
+    try std.testing.expectEqual(token3.type, TokenType.Number);
+    try std.testing.expectEqualStrings(token3.chars, "123");
+
+    const token4 = scanner.scanToken();
+    try std.testing.expectEqual(token4.type, TokenType.Semicolon);
+    try std.testing.expectEqualStrings(token4.chars, ";");
+}
+
+test "Scan token with various cases" {
+    const source1 = "let const if else while for fn return true false nil";
+    var scanner1 = Scanner.init(source1);
+
+    const keywords = [_]TokenType{
+        TokenType.Let, TokenType.Const, TokenType.If,     TokenType.Else, TokenType.While,
+        TokenType.For, TokenType.Fn,    TokenType.Return, TokenType.True, TokenType.False,
+        TokenType.Nil,
+    };
+    const keywordStrings = [_][]const u8{
+        "let", "const", "if", "else", "while", "for", "fn", "return", "true", "false", "nil",
+    };
+
+    for (keywords, 0..) |keyword, i| {
+        const token = scanner1.scanToken();
+        try std.testing.expectEqual(token.type, keyword);
+        try std.testing.expectEqualStrings(token.chars, keywordStrings[i]);
+    }
+
+    const source2 = "+ - * / = == != < <= > >= & | !";
+    var scanner2 = Scanner.init(source2);
+
+    const operators = [_]TokenType{
+        TokenType.Plus,         TokenType.Minus,      TokenType.Star,      TokenType.Slash,     TokenType.Equal,
+        TokenType.EqualEqual,   TokenType.BangEqual,  TokenType.Less,      TokenType.LessEqual, TokenType.Greater,
+        TokenType.GreaterEqual, TokenType.BitwiseAnd, TokenType.BitwiseOr, TokenType.Bang,
+    };
+    const operatorStrings = [_][]const u8{
+        "+", "-", "*", "/", "=", "==", "!=", "<", "<=", ">", ">=", "&", "|", "!",
+    };
+
+    for (operators, 0..) |operator, i| {
+        const token = scanner2.scanToken();
+        try std.testing.expectEqual(token.type, operator);
+        try std.testing.expectEqualStrings(token.chars, operatorStrings[i]);
+    }
 }
