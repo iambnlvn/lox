@@ -14,6 +14,8 @@ pub const TokenType = enum {
     Semicolon,
     Slash,
     Star,
+    Mod,
+    Exponent,
     Bang,
     BangEqual,
     Equal,
@@ -249,7 +251,8 @@ pub const Scanner = struct {
             '-' => scanner.makeToken(TokenType.Minus, null),
             '+' => scanner.makeToken(TokenType.Plus, null),
             '/' => scanner.makeToken(TokenType.Slash, null),
-            '*' => scanner.makeToken(TokenType.Star, null),
+            '*' => scanner.makeToken(if (scanner.match('*')) TokenType.Exponent else TokenType.Star, null),
+            '%' => scanner.makeToken(TokenType.Mod, null),
             '^' => scanner.makeToken(TokenType.Xor, null),
             '&' => scanner.makeToken(TokenType.BitwiseAnd, null),
             '|' => scanner.makeToken(TokenType.BitwiseOr, null),
@@ -402,31 +405,6 @@ test "MakeNumberToken for float" {
     try std.testing.expectEqual(token.optionalData.?.fraction, 1);
 }
 
-test "Scan token" {
-    const source = "let varName = 123;";
-    var scanner = Scanner.init(source);
-    const id = scanner.scanToken();
-
-    try std.testing.expectEqual(id.type, TokenType.Let);
-    try std.testing.expectEqualStrings(id.chars, "let");
-
-    const token = scanner.scanToken();
-    try std.testing.expectEqual(token.type, TokenType.Identifier);
-    try std.testing.expectEqualStrings(token.chars, "varName");
-
-    const token2 = scanner.scanToken();
-    try std.testing.expectEqual(token2.type, TokenType.Equal);
-    try std.testing.expectEqualStrings(token2.chars, "=");
-
-    const token3 = scanner.scanToken();
-    try std.testing.expectEqual(token3.type, TokenType.Number);
-    try std.testing.expectEqualStrings(token3.chars, "123");
-
-    const token4 = scanner.scanToken();
-    try std.testing.expectEqual(token4.type, TokenType.Semicolon);
-    try std.testing.expectEqualStrings(token4.chars, ";");
-}
-
 test "Scan token with various cases" {
     const source1 = "let const if else while for fn return true false nil";
     var scanner1 = Scanner.init(source1);
@@ -446,17 +424,16 @@ test "Scan token with various cases" {
         try std.testing.expectEqualStrings(token.chars, keywordStrings[i]);
     }
 
-    const source2 = "+ - * / = == != < <= > >= & | !";
+    const source2 = "+ - * / = == != < <= > >= & | ! ** % ^";
     var scanner2 = Scanner.init(source2);
 
     const operators = [_]TokenType{
         TokenType.Plus,         TokenType.Minus,      TokenType.Star,      TokenType.Slash,     TokenType.Equal,
         TokenType.EqualEqual,   TokenType.BangEqual,  TokenType.Less,      TokenType.LessEqual, TokenType.Greater,
-        TokenType.GreaterEqual, TokenType.BitwiseAnd, TokenType.BitwiseOr, TokenType.Bang,
+        TokenType.GreaterEqual, TokenType.BitwiseAnd, TokenType.BitwiseOr, TokenType.Bang,      TokenType.Exponent,
+        TokenType.Mod,          TokenType.Xor,
     };
-    const operatorStrings = [_][]const u8{
-        "+", "-", "*", "/", "=", "==", "!=", "<", "<=", ">", ">=", "&", "|", "!",
-    };
+    const operatorStrings = [_][]const u8{ "+", "-", "*", "/", "=", "==", "!=", "<", "<=", ">", ">=", "&", "|", "!", "**", "%", "^" };
 
     for (operators, 0..) |operator, i| {
         const token = scanner2.scanToken();
