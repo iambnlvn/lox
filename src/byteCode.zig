@@ -1,83 +1,67 @@
 const std = @import("std");
-const Bytecode = std.ArrayList(u8);
+const Allocator = std.mem.Allocator;
+const ArrayList = std.ArrayList;
 const Value = @import("value.zig").Value;
-const Constants = std.ArrayList(Value);
 
 pub const Chunk = struct {
-    code: Bytecode,
-    constants: Constants,
-
+    code: ArrayList(u8),
+    lines: ArrayList(u32),
+    constants: ArrayList(Value),
     const Self = @This();
-
-    pub fn init(allocator: std.mem.Allocator) Chunk {
-        return Chunk{
-            .code = Bytecode.init(allocator),
-            .constants = Constants.init(allocator),
+    pub fn init(allocator: Allocator) Self {
+        return Self{
+            .code = ArrayList(u8).init(allocator),
+            .lines = ArrayList(u32).init(allocator),
+            .constants = ArrayList(Value).init(allocator),
         };
     }
 
     pub fn deinit(self: *Self) void {
-        self.constants.deinit();
         self.code.deinit();
+        self.lines.deinit();
+        self.constants.deinit();
     }
 
-    fn addConstant(self: *Self, value: Value) ConstantIndex {
-        const id = @as(u16, @intCast(self.constants.items.len));
-        self.constants.append(value) catch unreachable;
-        return .{ .index = id };
+    pub fn write(self: *Self, byte: u8, line: u32) !void {
+        try self.code.append(byte);
+        try self.lines.append(line);
     }
 
-    pub fn pushConstant(self: *Self, value: Value) void {
-        const id = self.addConstant(value);
-        self.code.append(id.words.low) catch unreachable;
-        self.code.append(id.words.high) catch unreachable;
-    }
-
-    pub fn push(self: *Self, op: Operator) void {
-        self.code.append(@intFromEnum(op)) catch unreachable;
-    }
-
-    pub fn getConstant(self: Self, ip: usize) Value {
-        const index = ConstantIndex{
-            .words = Words{
-                .low = self.code.items[ip],
-                .high = self.code.items[ip + 1],
-            },
-        };
-
-        return self.constants.items[@as(usize, @intCast(index.index))];
+    pub fn addConstant(self: *Self, value: Value) !i32 {
+        try self.constants.append(value);
+        return @as(i32, @intCast(self.constants.items.len)) - 1;
     }
 };
 
-const ConstantIndex = packed union {
-    index: u16,
-    words: Words,
-};
-const Words = packed struct {
-    low: u8,
-    high: u8,
-};
-
-pub const Operator = enum {
-    Return,
+pub const OpCode = enum {
     Constant,
+    Nil,
     True,
     False,
-    Nil,
-    Add,
-    Sub,
-    Mul,
-    Mod,
-    Div,
-    Neg,
-    Not,
-    And,
-    Or,
-    Xor,
+    Pop,
+    GetLocal,
+    SetLocal,
+    GetUpvalue,
+    CloseUpvalue,
+    SetUpvalue,
+    GetGlobal,
+    DefineGlobal,
+    SetGlobal,
     Equal,
-    NotEqual,
     Greater,
-    GreaterEqual,
     Less,
-    LessEqual,
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Mod,
+    Not,
+    Negate,
+    Print,
+    Jump,
+    JumpIfFalse,
+    Loop,
+    Call,
+    Closure,
+    Return,
 };
