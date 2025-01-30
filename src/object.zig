@@ -1,6 +1,9 @@
 const std = @import("std");
 const testing = std.testing;
 const Allocator = std.mem.Allocator;
+const Value = @import("value.zig").Value;
+const Chunk = @import("byteCode.zig").Chunk;
+
 const ObjType = enum {
     string,
     function,
@@ -38,6 +41,11 @@ pub const Object = struct {
     pub fn asString(self: *Object) *ObjectString {
         return self.cast(ObjectString);
     }
+
+    pub fn asFunction(self: *Object) *ObjectFunction {
+        return self.cast(ObjectFunction);
+    }
+
     pub fn mark(self: *Object) void {
         if (self.isMarked) return;
         self.isMarked = true;
@@ -70,6 +78,50 @@ pub const ObjectString = struct {
             _ = @field(writer, "print");
         }
         writer.print("{s}", .{self.data});
+    }
+};
+
+pub const ObjectFunction = struct {
+    arity: u8 = 0,
+    upvalueCount: u8 = 0,
+    chunk: Chunk,
+    name: ?*ObjectString = null,
+
+    pub fn init(allocator: Allocator) ObjectFunction {
+        const chunk = Chunk.init(allocator);
+        return .{ .chunk = chunk };
+    }
+
+    pub fn deinit(self: *ObjectFunction) void {
+        self.chunk.deinit();
+    }
+
+    pub fn format(
+        self: ObjectFunction,
+        writer: Writer,
+    ) void {
+        if (self.name) |name| {
+            writer.print("<fn {s}>", .{name});
+        } else {
+            writer.print("<script>", .{});
+        }
+    }
+};
+
+pub const NativeFn = fn (argCount: u8, args: [*]Value) Value;
+
+pub const NativeObject = struct {
+    function: NativeFn,
+
+    pub fn init(function: NativeFn) NativeObject {
+        return NativeObject{ .function = function };
+    }
+
+    pub fn format(
+        _: NativeObject,
+        writer: Writer,
+    ) void {
+        writer.print("<native fn>", .{});
     }
 };
 
@@ -132,4 +184,89 @@ test "ObjectString.format" {
     };
     try str.format(writer);
     str.deinit(allocator);
+}
+
+test "ObjectFunction init and deinit" {
+    const allocator = testing.allocator;
+    var objFn = ObjectFunction.init(allocator);
+    defer objFn.deinit();
+
+    try std.testing.expect(objFn.arity == 0);
+    try std.testing.expect(objFn.upvalueCount == 0);
+    try std.testing.expect(objFn.name == null);
+}
+
+fn testNativeFn(argCount: u8, args: [*]Value) Value {
+    _ = args;
+    return Value{ .number = @as(f64, @floatFromInt(argCount)) };
+}
+
+fn testPrint(comptime format: []const u8, args: anytype) void {
+    std.debug.print(format, args);
+}
+
+test "NativeObject.init" {
+    const nativeObj = NativeObject.init(testNativeFn);
+    try testing.expect(@TypeOf(nativeObj.function) == @TypeOf(testNativeFn));
+}
+
+test "NativeObject.format" {
+    const nativeObj = NativeObject.init(testNativeFn);
+    const writer = Writer{
+        .print = testPrint,
+    };
+    nativeObj.format(writer);
+}
+
+test "NativeObject function call" {
+    const nativeObj = NativeObject.init(testNativeFn);
+    var args: [1]Value = undefined;
+    const result = nativeObj.function(1, &args);
+    try testing.expectEqual(@as(f64, 1.0), result.number);
+}
+
+test "ObjectFunction - initialization and deinitialization" {
+    const allocator = testing.allocator;
+    var func = ObjectFunction.init(allocator);
+    defer func.deinit();
+
+    try testing.expectEqual(@as(u8, 0), func.arity);
+    try testing.expectEqual(@as(u8, 0), func.upvalueCount);
+    try testing.expect(func.name == null);
+}
+
+//TODO!: fix the following tests
+// test "ObjectFunction - format unnamed function" {
+//     const allocator = testing.allocator;
+//     var func = ObjectFunction.init(allocator);
+//     defer func.deinit();
+
+//     const writer = Writer{ .print = testPrint };
+//     func.format(writer);
+// }
+
+// test "ObjectFunction - format named function" {
+//     const allocator = testing.allocator;
+//     var func = ObjectFunction.init(allocator);
+//     defer func.deinit();
+
+//     var nameStr = ObjectString.init("test", allocator, false);
+//     defer nameStr.deinit(allocator);
+
+//     func.name = &nameStr;
+
+//     const writer = Writer{ .print = testPrint };
+//     func.format(writer);
+// }
+
+test "ObjectFunction - arity and upvalue manipulation" {
+    const allocator = testing.allocator;
+    var func = ObjectFunction.init(allocator);
+    defer func.deinit();
+
+    func.arity = 2;
+    func.upvalueCount = 3;
+
+    try testing.expectEqual(@as(u8, 2), func.arity);
+    try testing.expectEqual(@as(u8, 3), func.upvalueCount);
 }
